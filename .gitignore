@@ -1,0 +1,30 @@
+# Dependencias e instaladores generados
+node_modules/
+dist/
+
+# Claves y certificados: nunca al repositorio
+*.ppk
+*.pem
+*.key
+*.p12
+*.pfx
+id_rsa*
+id_ed25519*
+id_ecdsa*
+id_dsa*
+
+# Datos de la app (sesiones, servidores conocidos, configuración local)
+sessions*.json
+known_hosts*.json
+settings.json
+
+# Variables de entorno y registros
+.env
+.env.*
+*.log
+
+# Sistema y editores
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

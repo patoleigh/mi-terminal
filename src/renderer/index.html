@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'">
+  <title>Mi Terminal</title>
+  <link rel="stylesheet" href="../../node_modules/@xterm/xterm/css/xterm.css">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <aside id="sidebar">
+    <div class="side-head">
+      <span>Sesiones</span>
+      <button id="btn-new" title="Nueva sesión">+</button>
+    </div>
+    <input id="filter" type="search" placeholder="Buscar…">
+    <div id="session-tree"></div>
+  </aside>
+  <div class="splitter" id="split-left" title="Arrastra para cambiar el ancho. Doble clic: tamaño original."></div>
+
+  <main>
+    <div id="tabbar">
+      <div id="tabs"></div>
+      <button id="btn-sftp" title="Mostrar u ocultar el explorador de archivos">SFTP</button>
+    </div>
+    <div id="workspace">
+      <div id="terminals">
+        <div id="empty">Doble clic en una sesión para conectar.<br><small>Clic derecho sobre una sesión para editarla.</small></div>
+      </div>
+      <div class="splitter" id="split-right" hidden title="Arrastra para cambiar el ancho. Doble clic: tamaño original."></div>
+      <section id="sftp" hidden>
+        <div class="sftp-bar">
+          <button id="sftp-up" title="Carpeta superior">↑</button>
+          <input id="sftp-path" spellcheck="false">
+          <button id="sftp-refresh" title="Actualizar">⟳</button>
+        </div>
+        <div class="sftp-actions">
+          <button id="sftp-upload">Subir archivos</button>
+          <button id="sftp-mkdir">Nueva carpeta</button>
+        </div>
+        <div class="sftp-actions sftp-opts">
+          <label title="Abre SFTP como administrador (sudo), igual que la opción de WinSCP. Permite subir y editar en carpetas de root o www-data."><input type="checkbox" id="sftp-sudo"> sudo</label>
+          <button id="sftp-editor" title="Programa con el que se abren los archivos">Editor: …</button>
+        </div>
+        <ul id="sftp-list"></ul>
+        <div id="sftp-status"></div>
+      </section>
+    </div>
+    <div id="statsbar" hidden></div>
+    <div id="statusbar">Listo</div>
+  </main>
+
+  <dialog id="session-dialog">
+    <form id="session-form">
+      <h2 id="f-title">Nueva sesión</h2>
+      <div class="grid">
+        <label>Nombre<input name="name" placeholder="Mi servidor"></label>
+        <label>Carpeta<input name="folder" placeholder="Producción, Clientes…"></label>
+        <label class="wide">Host<input name="host" required placeholder="servidor.ejemplo.com o IP"></label>
+        <label>Puerto<input name="port" type="number" min="1" max="65535" value="22"></label>
+        <label>Usuario<input name="username" required></label>
+        <label class="wide">Autenticación
+          <select name="authType">
+            <option value="password">Contraseña</option>
+            <option value="key">Clave privada</option>
+            <option value="agent">Agente SSH (ssh-agent)</option>
+          </select>
+        </label>
+      </div>
+      <div id="auth-password">
+        <label>Contraseña<input name="password" type="password" autocomplete="off"></label>
+      </div>
+      <div id="auth-key" hidden>
+        <label>Archivo de clave
+          <span class="row"><input name="keyPath" placeholder="C:\Users\…\.ssh\id_ed25519"><button type="button" id="f-browse">Buscar…</button></span>
+        </label>
+        <label>Frase de paso<input name="passphrase" type="password" autocomplete="off"></label>
+      </div>
+      <label class="check"><input type="checkbox" name="clearSecrets"> Borrar contraseña o frase guardada</label>
+
+      <fieldset>
+        <legend>Túneles SSH</legend>
+        <p class="hint">Local: un puerto de este equipo llega a un destino visto desde el servidor. Remoto: un puerto del servidor llega a un destino visto desde este equipo.</p>
+        <div id="tunnel-rows"></div>
+        <button type="button" id="f-add-tunnel">+ Añadir túnel</button>
+      </fieldset>
+
+      <div class="buttons">
+        <button type="button" id="f-cancel">Cancelar</button>
+        <button type="submit" class="primary">Guardar</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="prompt-dialog">
+    <form id="p-form">
+      <h2 id="p-title"></h2>
+      <label><span id="p-label"></span><input id="p-input" autocomplete="off"></label>
+      <div class="buttons">
+        <button type="button" id="p-cancel">Cancelar</button>
+        <button type="submit" class="primary">Aceptar</button>
+      </div>
+    </form>
+  </dialog>
+
+  <div id="ctx-menu" hidden></div>
+
+  <script src="../../node_modules/@xterm/xterm/lib/xterm.js"></script>
+  <script src="../../node_modules/@xterm/addon-fit/lib/addon-fit.js"></script>
+  <script src="../../node_modules/@xterm/addon-webgl/lib/addon-webgl.js"></script>
+  <script src="renderer.js"></script>
+</body>
+</html>
