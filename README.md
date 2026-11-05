@@ -117,5 +117,7 @@ Precauciones de uso:
   guardarlas, deja el campo vacío y la app las pedirá al conectar.
 - No hay actualizaciones automáticas: mantén la app al día generando versiones nuevas.
   Electron recibe parches de seguridad con frecuencia.
+  **Dependabot** (`.github/dependabot.yml`) revisa las dependencias cada lunes y abre
+  propuestas de actualización. Antes de aceptar una, prueba la app con `npm start`.
 - **Nunca** pongas claves ni archivos de sesiones dentro de esta carpeta. El `.gitignore`
   los excluye, pero lo más seguro es tenerlos fuera.

@@ -1,0 +1,26 @@
+# Dependabot revisa cada semana si hay versiones nuevas de las dependencias
+# y abre una propuesta (pull request) por cada grupo de actualizaciones.
+# Las alertas de seguridad llegan aparte, apenas se publica una vulnerabilidad.
+version: 2
+updates:
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+      timezone: "America/Santiago"
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "deps"
+    groups:
+      # Terminal en pantalla: se actualizan juntas porque dependen entre sí.
+      xterm:
+        patterns:
+          - "@xterm/*"
+      # Herramienta para generar el instalador (no va dentro de la app).
+      instalador:
+        patterns:
+          - "electron-builder"
+    # Electron, ssh2 y hash-wasm quedan en propuestas separadas: cada una debe
+    # probarse por su cuenta. Al actualizar ssh2, prueba el modo sudo del SFTP.
