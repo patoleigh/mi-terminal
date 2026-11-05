@@ -1,7 +1,7 @@
 {
   "name": "mi-terminal",
   "productName": "Mi Terminal",
-  "version": "0.3.2",
+  "version": "0.3.3",
   "private": true,
   "description": "Cliente SSH personal con pestañas, gestor de sesiones, SFTP y túneles",
   "author": "Pato Leigh",
