@@ -50,6 +50,7 @@ function renderTree() {
       item.title = `${s.username}@${s.host}:${s.port}`;
       const name = document.createElement('span');
       name.textContent = s.name;
+      if (s.allowAgents) item.classList.add('agents');
       const sub = document.createElement('small');
       sub.textContent = `${s.username}@${s.host}`;
       item.append(name, sub);
@@ -120,6 +121,7 @@ function editSession(s = {}) {
   for (const k of ['name', 'folder', 'host', 'username', 'keyPath']) f[k].value = s[k] || '';
   f.port.value = s.port || 22;
   f.authType.value = s.authType || 'password';
+  f.allowAgents.checked = !!s.allowAgents;
   f.password.placeholder = s.hasPassword ? 'Guardada; escribe para cambiarla' : 'Opcional; si no, se pide al conectar';
   f.passphrase.placeholder = s.hasPassphrase ? 'Guardada; escribe para cambiarla' : 'Opcional';
   $('#tunnel-rows').replaceChildren();
@@ -162,6 +164,7 @@ form.onsubmit = async (e) => {
     username: f.username.value.trim(),
     authType: f.authType.value,
     keyPath: f.keyPath.value.trim(),
+    allowAgents: f.allowAgents.checked,
     tunnels: [...document.querySelectorAll('.tunnel-row')].map((r) => ({
       type: val(r, 'type'),
       srcPort: Number(val(r, 'srcPort')),
@@ -272,13 +275,35 @@ function openTab(name, extra) {
   const close = document.createElement('button');
   close.textContent = '✕';
   close.title = 'Cerrar pestaña';
-  tabEl.append(label, close);
+  // Visible cuando un agente (MCP) puede actuar en la pestaña sin preguntar; clic para quitarle el permiso.
+  const badge = document.createElement('span');
+  badge.className = 'agent-badge';
+  badge.textContent = 'MCP';
+  badge.hidden = true;
+  badge.title = 'Un agente puede actuar en esta pestaña sin pedir aprobación. Clic para quitarle el permiso.';
+  badge.onclick = (e) => {
+    e.stopPropagation();
+    api.agent.revoke(connId);
+  };
+  tabEl.append(label, badge, close);
   $('#tabs').append(tabEl);
 
-  const tab = { connId, term, fit, el, tabEl, alive: false, sftpPath: null, ...extra };
+  const tab = { connId, term, fit, el, tabEl, badge, alive: false, sftpPath: null, ...extra };
   tabs.set(connId, tab);
 
   tabEl.onclick = () => activate(connId);
+  // Clic derecho: dar o quitar a los agentes (MCP) el permiso de actuar sin preguntar aquí.
+  tabEl.oncontextmenu = (e) => {
+    e.preventDefault();
+    const grant = async () => {
+      const ok = await api.agent.grant(connId);
+      if (!ok) status('No se pudo: activa el acceso MCP y marca «Permitir agentes» en esta sesión.');
+    };
+    showMenu(e.clientX, e.clientY, [
+      badge.hidden ? ['Agentes (MCP): permitir todo en esta pestaña', grant] : ['Agentes (MCP): volver a pedir aprobación', () => api.agent.revoke(connId)],
+      ['Cerrar pestaña', () => closeTab(connId)],
+    ]);
+  };
   close.onclick = (e) => {
     e.stopPropagation();
     closeTab(connId);
@@ -317,7 +342,8 @@ function openTab(name, extra) {
   });
 
   activate(connId);
-  connectTab(tab);
+  tab.ready = connectTab(tab);
+  return tab;
 }
 
 // Dibuja con la tarjeta gráfica (mucho más rápido). Si WebGL falla, xterm vuelve al modo normal.
@@ -400,6 +426,7 @@ function markClosed(tab, msg) {
   tab.cpuHist = [];
   if (activeId === tab.connId) renderStats();
   tab.awaitReconnect = true;
+  tab.lastError = msg;
   tab.tabEl.classList.add('dead');
   tab.term.writeln(`\r\n\x1b[31m${msg}\x1b[0m`);
   tab.term.writeln(`\x1b[90mPresiona Enter para ${tab.local ? 'abrirla de nuevo' : 'reconectar'}.\x1b[0m`);
@@ -943,5 +970,141 @@ makeResizable($('#split-right'), $('#sftp'), { key: 'width.sftp', side: 'right',
 // Evita que soltar un archivo fuera del panel abra el archivo en la ventana.
 document.addEventListener('dragover', (e) => e.preventDefault());
 document.addEventListener('drop', (e) => e.preventDefault());
+
+// ---------- Agentes de IA (MCP) ----------
+// El proceso principal decide y aprueba; aquí solo se abren pestañas y se lee su texto.
+
+function tabText(tab, from, maxLines) {
+  const b = tab.term.buffer.active;
+  const out = [];
+  for (let i = Math.max(0, from); i < b.length; i++) {
+    const line = b.getLine(i);
+    if (!line) continue;
+    const text = line.translateToString(true);
+    if (line.isWrapped && out.length) out[out.length - 1] += text;
+    else out.push(text);
+  }
+  while (out.length && !out[out.length - 1].trim()) out.pop();
+  return out.slice(-maxLines).join('\n');
+}
+
+// Espera a que xterm termine de procesar lo recibido antes de mirar el contenido.
+const settled = (tab) => new Promise((res) => tab.term.write('', res));
+
+function agentTab(connId) {
+  const tab = tabs.get(connId);
+  if (!tab) throw new Error('La pestaña ya no existe.');
+  return tab;
+}
+
+const agentOps = {
+  async open({ sessionId, shell }) {
+    let tab;
+    if (shell) {
+      tab = openLocal(shell);
+    } else {
+      await refreshSessions();
+      const s = sessions.find((x) => x.id === sessionId);
+      if (!s) return { ok: false, error: 'Sesión no encontrada.' };
+      tab = openSession(s);
+    }
+    await tab.ready;
+    return tab.alive ? { ok: true, connId: tab.connId } : { ok: false, error: tab.lastError || 'No se pudo conectar.' };
+  },
+  // Marca la línea actual: la salida de un comando es lo que aparece desde ahí.
+  async mark({ connId }) {
+    const tab = agentTab(connId);
+    await settled(tab);
+    const id = ++counter;
+    (tab.marks ||= new Map()).set(id, tab.term.registerMarker(0));
+    return { mark: id };
+  },
+  unmark({ connId, mark }) {
+    const tab = tabs.get(connId);
+    tab?.marks?.get(mark)?.dispose();
+    tab?.marks?.delete(mark);
+    return { ok: true };
+  },
+  async read({ connId, mark, lines }) {
+    const tab = agentTab(connId);
+    await settled(tab);
+    const m = tab.marks?.get(mark);
+    const from = m && !m.isDisposed && m.line >= 0 ? m.line : 0;
+    return { text: tabText(tab, from, lines || 2000) };
+  },
+};
+
+api.agent.onRequest(async (reqId, op, payload) => {
+  let res;
+  try {
+    res = await agentOps[op](payload || {});
+  } catch (err) {
+    res = { error: cleanErr(err) };
+  }
+  api.agent.respond(reqId, res);
+});
+
+api.agent.onPerm((id, all) => {
+  const t = tabs.get(id);
+  if (t) t.badge.hidden = !all;
+});
+api.onSessionsChanged(() => refreshSessions());
+
+const mcpDlg = $('#mcp-dialog');
+
+function showMcp(st) {
+  $('#mcp-enabled').checked = st.enabled;
+  $('#mcp-local').checked = st.allowLocal;
+  $('#mcp-local').disabled = !st.enabled;
+  $('#mcp-approval').value = st.approval;
+  $('#mcp-approval').disabled = !st.enabled;
+  $('#mcp-setup').disabled = !st.running;
+  $('#mcp-status').textContent = st.error
+    ? `No se pudo activar: ${st.error}`
+    : st.running
+      ? `Activo en ${st.url} (solo desde este equipo).`
+      : 'Apagado: ningún agente puede conectarse.';
+  $('#btn-mcp').classList.toggle('on', st.running);
+}
+
+async function saveMcp() {
+  try {
+    showMcp(
+      await api.mcp.set({
+        enabled: $('#mcp-enabled').checked,
+        allowLocal: $('#mcp-local').checked,
+        approval: $('#mcp-approval').value,
+      })
+    );
+  } catch (err) {
+    $('#mcp-status').textContent = cleanErr(err);
+  }
+}
+$('#mcp-enabled').onchange = saveMcp;
+$('#mcp-local').onchange = saveMcp;
+$('#mcp-approval').onchange = saveMcp;
+$('#mcp-form').onsubmit = (e) => e.preventDefault();
+$('#mcp-close').onclick = () => mcpDlg.close();
+$('#btn-mcp').onclick = async () => {
+  $('#mcp-copied').textContent = '';
+  showMcp(await api.mcp.get());
+  mcpDlg.showModal();
+};
+for (const b of document.querySelectorAll('[data-copy]')) {
+  b.onclick = async () => {
+    try {
+      await api.mcp.copy(b.dataset.copy);
+      $('#mcp-copied').textContent = `Copiado (${b.textContent}). ${b.dataset.hint}`;
+    } catch (err) {
+      $('#mcp-copied').textContent = cleanErr(err);
+    }
+  };
+}
+$('#mcp-new-token').onclick = async () => {
+  if (!confirm('Los agentes ya configurados dejarán de funcionar hasta que pegues la configuración nueva. ¿Continuar?')) return;
+  showMcp(await api.mcp.newToken());
+  $('#mcp-copied').textContent = 'Token nuevo generado. Copia de nuevo la configuración.';
+};
+api.mcp.get().then(showMcp);
 
 refreshSessions();

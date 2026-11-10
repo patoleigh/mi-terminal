@@ -10,6 +10,8 @@ const { Client } = require('ssh2');
 const { convertPpk, isPpk, PpkError } = require('./ppk');
 const { startStats } = require('./stats');
 const { listShells, openShell } = require('./local');
+const { startMcpServer } = require('./mcp');
+const createAgent = require('./agent');
 
 let win;
 
@@ -111,7 +113,7 @@ function publicSession(s) {
 
 handle('sessions:list', () => loadSessions().map(publicSession));
 
-handle('sessions:save', (_e, input) => {
+function saveSession(input) {
   const list = loadSessions();
   const idx = list.findIndex((s) => s.id === input.id);
   const prev = idx >= 0 ? list[idx] : {};
@@ -126,6 +128,8 @@ handle('sessions:save', (_e, input) => {
     keyPath: input.keyPath || '',
     tunnels: Array.isArray(input.tunnels) ? input.tunnels : [],
     sftpSudo: input.sftpSudo ?? prev.sftpSudo ?? false,
+    // Solo las sesiones marcadas quedan al alcance de los agentes (MCP).
+    allowAgents: !!(input.allowAgents ?? prev.allowAgents),
     // undefined = conservar, '' = borrar, texto = reemplazar
     password: input.password === undefined ? prev.password || null : encrypt(input.password),
     passphrase: input.passphrase === undefined ? prev.passphrase || null : encrypt(input.passphrase),
@@ -137,7 +141,9 @@ handle('sessions:save', (_e, input) => {
   else list.push(s);
   writeJson(sessionsFile(), list);
   return publicSession(s);
-});
+}
+
+handle('sessions:save', (_e, input) => saveSession(input));
 
 handle('sessions:delete', (_e, id) => {
   writeJson(sessionsFile(), loadSessions().filter((s) => s.id !== id));
@@ -203,6 +209,7 @@ function verifyHost(host, port, key, verify) {
 // ---------- SSH ----------
 
 const send = (channel, ...args) => {
+  if (channel === 'ssh:data') activity.set(args[0], Date.now());
   if (win && !win.isDestroyed()) win.webContents.send(channel, ...args);
 };
 
@@ -212,6 +219,7 @@ function cleanup(connId) {
   c.servers.forEach((s) => s.close());
   stopEdits(connId, c);
   conns.delete(connId);
+  forgetTab(connId);
 }
 
 function startTunnels(connId, conn, tunnels = []) {
@@ -435,6 +443,7 @@ function closeLocal(connId) {
   const p = locals.get(connId);
   if (!p) return;
   locals.delete(connId);
+  forgetTab(connId);
   try {
     p.kill();
   } catch {
@@ -452,6 +461,7 @@ handle('local:open', async (_e, { connId, shellId, cols, rows }) => {
   p.onExit(() => {
     if (locals.get(connId) !== p) return;
     locals.delete(connId);
+    forgetTab(connId);
     send('ssh:closed', connId);
   });
   return { ok: true };
@@ -759,6 +769,169 @@ function stopEdits(connId, c) {
 
 app.on('will-quit', () => fs.rmSync(editBase, { recursive: true, force: true }));
 
+// ---------- Agentes por MCP (Cursor, Codex, Claude…) ----------
+// Apagado por defecto. Al activarlo, la app escucha en 127.0.0.1 y exige un token.
+// Qué puede hacer un agente y cómo se aprueba está en agent.js.
+
+// Solo para pruebas automáticas en desarrollo; la versión instalada lo ignora.
+const TEST = !app.isPackaged && process.env.MI_TERMINAL_TEST === '1';
+const MCP_PORT = 47821;
+let mcpServer = null;
+let mcpError = '';
+const activity = new Map(); // connId -> última vez que la pestaña escribió algo
+const rendererWaits = new Map();
+
+function mcpSettings() {
+  // approval: 'agent' = la pregunta aparece dentro del agente; 'app' = aviso de Mi Terminal.
+  const st = { enabled: false, allowLocal: false, approval: 'agent', port: MCP_PORT, ...readJson(settingsFile(), {}).mcp };
+  if (st.approval !== 'app') st.approval = 'agent';
+  if (!Number.isInteger(st.port) || st.port < 1024 || st.port > 65535) st.port = MCP_PORT;
+  return st;
+}
+function saveMcpSettings(change) {
+  const st = readJson(settingsFile(), {});
+  st.mcp = { ...mcpSettings(), ...change };
+  writeJson(settingsFile(), st);
+}
+function mcpToken() {
+  if (TEST) return process.env.MI_TERMINAL_TEST_TOKEN || '';
+  try {
+    return decrypt(mcpSettings().token);
+  } catch {
+    return '';
+  }
+}
+const newToken = () => encrypt(crypto.randomBytes(32).toString('base64url'));
+
+// Pide algo a la interfaz (abrir una pestaña, leer su texto) y espera la respuesta.
+function rendererAsk(op, payload, timeoutMs = 15000) {
+  return new Promise((resolve, reject) => {
+    if (!win || win.isDestroyed()) return reject(new Error('La ventana de la app no está disponible.'));
+    const reqId = crypto.randomUUID();
+    const timer = setTimeout(() => {
+      rendererWaits.delete(reqId);
+      reject(new Error('La app no respondió a tiempo.'));
+    }, timeoutMs);
+    rendererWaits.set(reqId, (res) => {
+      clearTimeout(timer);
+      rendererWaits.delete(reqId);
+      if (!res || (res.error && res.ok === undefined)) reject(new Error(String(res?.error || 'Sin respuesta')));
+      else resolve(res);
+    });
+    send('agent:req', reqId, op, payload);
+  });
+}
+on('agent:res', (_e, reqId, res) => rendererWaits.get(reqId)?.(res));
+
+// Registro de lo que pidieron los agentes: %APPDATA%\mi-terminal\agent-log.jsonl
+function agentLog(entry) {
+  try {
+    const file = path.join(dataDir(), 'agent-log.jsonl');
+    if (fs.statSync(file, { throwIfNoEntry: false })?.size > 2 * 1024 * 1024) fs.renameSync(file, `${file}.old`);
+    fs.appendFileSync(file, `${JSON.stringify({ fecha: new Date().toISOString(), ...entry })}\n`);
+  } catch {
+    /* el registro nunca debe interrumpir una acción */
+  }
+}
+
+const agent = createAgent({
+  conns,
+  locals,
+  dialog,
+  win: () => win,
+  autoApprove: TEST && !process.env.MI_TERMINAL_TEST_APPROVAL_MS,
+  approvalMs: (TEST && Number(process.env.MI_TERMINAL_TEST_APPROVAL_MS)) || 120000,
+  loadSessions,
+  saveSession,
+  settings: mcpSettings,
+  listShells,
+  sessionsChanged: () => send('sessions:changed'),
+  renderer: rendererAsk,
+  write: (id, data) => {
+    const p = locals.get(id);
+    if (p) p.write(data);
+    else conns.get(id)?.stream?.write(data);
+  },
+  lastData: (id) => activity.get(id) || 0,
+  getSftp,
+  putFile,
+  promisify,
+  isRunnable,
+  onPerm: (id, all) => send('agent:perm', id, all),
+  log: agentLog,
+});
+
+function forgetTab(connId) {
+  activity.delete(connId);
+  agent.forget(connId);
+}
+
+async function applyMcp() {
+  if (mcpServer) {
+    mcpServer.close();
+    mcpServer.closeAllConnections();
+    mcpServer = null;
+  }
+  mcpError = '';
+  const st = mcpSettings();
+  if (!st.enabled) {
+    // Al apagarlo se pierden los permisos dados a los agentes.
+    for (const id of [...conns.keys(), ...locals.keys()]) agent.revoke(id);
+    return;
+  }
+  try {
+    if (!TEST && !st.token) saveMcpSettings({ token: newToken() });
+    mcpServer = await startMcpServer({
+      port: st.port,
+      getToken: mcpToken,
+      info: { name: 'mi-terminal', version: app.getVersion() },
+      tools: agent.tools,
+    });
+  } catch (err) {
+    mcpError = err.code === 'EADDRINUSE' ? `El puerto ${st.port} está ocupado por otro programa.` : err.message;
+  }
+}
+
+const mcpUrl = () => `http://127.0.0.1:${mcpSettings().port}/mcp`;
+function mcpState() {
+  const st = mcpSettings();
+  return { enabled: st.enabled, allowLocal: st.allowLocal, approval: st.approval, running: !!mcpServer, error: mcpError, url: mcpUrl() };
+}
+
+handle('mcp:get', mcpState);
+
+handle('mcp:set', async (_e, change) => {
+  saveMcpSettings({ enabled: !!change?.enabled, allowLocal: !!change?.allowLocal, approval: change?.approval === 'app' ? 'app' : 'agent' });
+  await applyMcp();
+  return mcpState();
+});
+
+// Token nuevo: las configuraciones copiadas antes dejan de funcionar.
+handle('mcp:newToken', () => {
+  saveMcpSettings({ token: newToken() });
+  return mcpState();
+});
+
+// El token va directo al portapapeles; la interfaz nunca lo recibe.
+handle('mcp:copy', (_e, kind) => {
+  const url = mcpUrl();
+  const token = mcpToken();
+  if (!token) throw new Error('Activa primero el acceso de agentes.');
+  const auth = `Bearer ${token}`;
+  const texts = {
+    claude: `claude mcp add --transport http mi-terminal ${url} --header "Authorization: ${auth}"`,
+    cursor: JSON.stringify({ mcpServers: { 'mi-terminal': { url, headers: { Authorization: auth } } } }, null, 2),
+    codex: `[mcp_servers.mi-terminal]\nurl = "${url}"\nhttp_headers = { "Authorization" = "${auth}" }\n`,
+    token,
+  };
+  if (!Object.hasOwn(texts, kind)) throw new Error('Opción no válida');
+  clipboard.writeText(texts[kind]);
+  return true;
+});
+
+on('agent:revoke', (_e, connId) => agent.revoke(String(connId)));
+handle('agent:grant', (_e, connId) => mcpSettings().enabled && agent.grant(String(connId)));
+
 // ---------- Ventana ----------
 
 function createWindow() {
@@ -791,6 +964,7 @@ app.whenReady().then(() => {
   ses.setPermissionCheckHandler(() => false);
 
   createWindow();
+  applyMcp();
 });
 
 // Ninguna ventana o vista puede crearse ni navegar fuera de la app.
@@ -803,5 +977,9 @@ app.on('web-contents-created', (_e, contents) => {
 app.on('window-all-closed', () => {
   for (const c of conns.values()) c.client.end();
   for (const id of [...locals.keys()]) closeLocal(id);
+  if (mcpServer) {
+    mcpServer.close();
+    mcpServer.closeAllConnections();
+  }
   app.quit();
 });

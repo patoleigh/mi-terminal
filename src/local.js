@@ -54,13 +54,15 @@ async function openShell(shellId, cols, rows) {
   if (!shell) throw new Error('Esa consola no está disponible en este equipo.');
   const pty = require('node-pty');
   const size = (n, def) => (Number.isInteger(n) && n > 0 && n < 1000 ? n : def);
-  return pty.spawn(shell.file, shell.args, {
+  const p = pty.spawn(shell.file, shell.args, {
     name: 'xterm-256color',
     cols: size(cols, 80),
     rows: size(rows, 24),
     cwd: os.homedir(),
     env: process.env,
   });
+  p.shell = { id: shell.id, name: shell.name };
+  return p;
 }
 
 module.exports = { listShells, openShell };

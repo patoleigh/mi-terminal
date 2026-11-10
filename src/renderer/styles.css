@@ -51,6 +51,10 @@ input:focus, select:focus { outline: 1px solid var(--accent); }
   font-weight: 600;
 }
 #filter { margin: 0 10px 8px; }
+.side-buttons { display: flex; gap: 4px; }
+#btn-mcp { font-size: 11px; }
+#btn-mcp.on { background: var(--accent); border-color: var(--accent); color: #fff; }
+.session.agents > span::after { content: ' MCP'; font-size: 9px; color: var(--accent); vertical-align: super; }
 #session-tree { flex: 1; overflow-y: auto; padding-bottom: 8px; }
 #session-tree summary { padding: 4px 10px; color: var(--muted); cursor: pointer; user-select: none; }
 #session-tree details .session { padding-left: 24px; }
@@ -93,11 +97,17 @@ main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
 }
 .tab.active { background: var(--bg); color: var(--text); border-top: 2px solid var(--accent); }
 .tab.dead span { text-decoration: line-through; }
+.agent-badge { font-size: 9px; padding: 1px 4px; border-radius: 3px; background: #e0b252; color: #111; font-weight: 600; }
+.agent-badge[hidden] { display: none; }
+#mcp-dialog { max-width: 520px; }
+#mcp-dialog .hint { padding: 0; margin: 0 0 10px; }
+.mcp-copy { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
+#mcp-setup:disabled { opacity: 0.5; }
 .tab button { border: none; background: none; padding: 2px 4px; color: var(--muted); }
 .tab button:hover { color: var(--danger); }
 #btn-sftp { margin: 4px; }
 #btn-local { margin: 4px 0 4px 4px; white-space: nowrap; }
-.tab.local > span::before { content: '>_ '; opacity: 0.6; }
+.tab.local > span:first-child::before { content: '>_ '; opacity: 0.6; }
 #btn-sftp.on { background: var(--accent); border-color: var(--accent); color: #fff; }
 
 #workspace { flex: 1; display: flex; min-height: 0; }

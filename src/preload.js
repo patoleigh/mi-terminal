@@ -49,6 +49,22 @@ contextBridge.exposeInMainWorld('api', {
     useSystem: () => ipcRenderer.invoke('editor:useSystem'),
   },
 
+  // Acceso de agentes por MCP. El token nunca pasa por la interfaz: "copy" lo pone en el portapapeles.
+  mcp: {
+    get: () => ipcRenderer.invoke('mcp:get'),
+    set: (change) => ipcRenderer.invoke('mcp:set', change),
+    newToken: () => ipcRenderer.invoke('mcp:newToken'),
+    copy: (kind) => ipcRenderer.invoke('mcp:copy', kind),
+  },
+  agent: {
+    onRequest: on('agent:req'),
+    respond: (reqId, res) => ipcRenderer.send('agent:res', reqId, res),
+    onPerm: on('agent:perm'),
+    revoke: (id) => ipcRenderer.send('agent:revoke', id),
+    grant: (id) => ipcRenderer.invoke('agent:grant', id),
+  },
+  onSessionsChanged: on('sessions:changed'),
+
   clipboard: {
     read: () => ipcRenderer.invoke('clipboard:read'),
     write: (text) => ipcRenderer.invoke('clipboard:write', text),

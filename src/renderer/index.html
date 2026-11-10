@@ -11,7 +11,10 @@
   <aside id="sidebar">
     <div class="side-head">
       <span>Sesiones</span>
-      <button id="btn-new" title="Nueva sesión">+</button>
+      <span class="side-buttons">
+        <button id="btn-mcp" title="Acceso de agentes de IA (MCP)">MCP</button>
+        <button id="btn-new" title="Nueva sesión">+</button>
+      </span>
     </div>
     <input id="filter" type="search" placeholder="Buscar…">
     <div id="session-tree"></div>
@@ -82,6 +85,7 @@
         <label>Frase de paso<input name="passphrase" type="password" autocomplete="off"></label>
       </div>
       <label class="check"><input type="checkbox" name="clearSecrets"> Borrar contraseña o frase guardada</label>
+      <label class="check" title="Los agentes de IA conectados por MCP podrán ver y usar esta sesión. Cada acción te pedirá aprobación."><input type="checkbox" name="allowAgents"> Permitir agentes (MCP) en esta sesión</label>
 
       <fieldset>
         <legend>Túneles SSH</legend>
@@ -104,6 +108,38 @@
       <div class="buttons">
         <button type="button" id="p-cancel">Cancelar</button>
         <button type="submit" class="primary">Aceptar</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="mcp-dialog">
+    <form id="mcp-form">
+      <h2>Agentes de IA (MCP)</h2>
+      <p class="hint">Permite que un agente (Claude, Cursor, Codex…) use Mi Terminal. Solo ve las sesiones que marques con «Permitir agentes» al editarlas, y cada acción te pide aprobación.</p>
+      <label class="check"><input type="checkbox" id="mcp-enabled"> Activar acceso de agentes</label>
+      <label class="check"><input type="checkbox" id="mcp-local"> Permitir también consolas locales (PowerShell, CMD, WSL)</label>
+      <label>Dónde apruebas lo que pide el agente
+        <select id="mcp-approval">
+          <option value="agent">En el agente (Codex, Claude, Cursor…)</option>
+          <option value="app">En Mi Terminal (más seguro)</option>
+        </select>
+      </label>
+      <p class="hint">«En el agente»: la pregunta aparece donde estás trabajando. Si ese agente no sabe mostrarla, se usa el aviso de Mi Terminal. «En Mi Terminal»: nada se ejecuta sin tu clic en esta app, aunque alguien obtenga el token.</p>
+      <p id="mcp-status" class="hint"></p>
+      <fieldset id="mcp-setup">
+        <legend>Conectar un agente</legend>
+        <p class="hint">Cada botón copia la configuración, que incluye un token secreto: no la compartas.</p>
+        <div class="mcp-copy">
+          <button type="button" data-copy="claude" data-hint="Pégalo en una terminal y ejecútalo.">Claude Code</button>
+          <button type="button" data-copy="cursor" data-hint="Pégalo en el archivo .cursor\mcp.json de tu carpeta de usuario.">Cursor</button>
+          <button type="button" data-copy="codex" data-hint="Pégalo al final de .codex\config.toml en tu carpeta de usuario.">Codex</button>
+          <button type="button" data-copy="token" data-hint="Úsalo como «Authorization: Bearer …» en otro cliente MCP.">Solo el token</button>
+        </div>
+        <p id="mcp-copied" class="hint"></p>
+        <button type="button" id="mcp-new-token" title="Invalida las configuraciones copiadas antes">Generar token nuevo</button>
+      </fieldset>
+      <div class="buttons">
+        <button type="button" id="mcp-close" class="primary">Cerrar</button>
       </div>
     </form>
   </dialog>
