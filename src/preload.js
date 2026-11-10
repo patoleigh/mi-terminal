@@ -19,6 +19,11 @@ contextBridge.exposeInMainWorld('api', {
   onProgress: on('sftp:progress'),
   onStats: on('ssh:stats'),
 
+  local: {
+    shells: () => ipcRenderer.invoke('local:shells'),
+    open: (opts) => ipcRenderer.invoke('local:open', opts),
+  },
+
   sftp: {
     home: (id) => ipcRenderer.invoke('sftp:home', id),
     list: (id, dir) => ipcRenderer.invoke('sftp:list', id, dir),

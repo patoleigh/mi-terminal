@@ -8,6 +8,9 @@ MobaXterm, PuTTY y WinSCP.
 
 - **Terminal SSH con pestañas.** Colores, `top`, `nano`, `vim`, etc. Copiar al seleccionar,
   pegar con clic derecho o `Ctrl+Shift+V`. Enter en una pestaña desconectada la reconecta.
+- **Consolas locales.** El botón **+ Consola** abre PowerShell, CMD, Git Bash o una
+  distribución de WSL (por ejemplo Ubuntu) de este equipo en una pestaña más. Solo se
+  ofrecen las que están instaladas.
 - **Gestor de sesiones.** Agrupadas por carpeta y con búsqueda. Autenticación por contraseña,
   clave privada (OpenSSH o **PuTTY `.ppk` v2 y v3**) o agente SSH.
 - **Explorador SFTP.** Navegar, subir (botón o arrastrando archivos), descargar, renombrar,
@@ -29,6 +32,7 @@ MobaXterm, PuTTY y WinSCP.
 | [Electron](https://www.electronjs.org/) | 45 | App de escritorio: Chromium para la ventana y Node.js 24 para red, archivos y cifrado. |
 | [ssh2](https://github.com/mscdex/ssh2) | 1.17.0 (fija) | Conexión SSH, autenticación, terminal, SFTP, túneles y canal de estadísticas. JavaScript puro, sin depender de OpenSSH ni PuTTY. |
 | [xterm.js](https://xtermjs.org/) | 6 | El terminal en pantalla (el mismo de VS Code), con los complementos `fit` (ajuste de tamaño) y `webgl` (dibujo por tarjeta gráfica). |
+| [node-pty](https://github.com/microsoft/node-pty) | 1.1 | Consolas locales (PowerShell, CMD, WSL) mediante ConPTY de Windows. Es la misma pieza que usa VS Code. |
 | [hash-wasm](https://github.com/Daninet/hash-wasm) | 4.12 | Argon2 en WebAssembly, necesario para abrir claves PuTTY v3. |
 | HTML, CSS y JavaScript | — | Interfaz sin frameworks. |
 | [electron-builder](https://www.electron.build/) + NSIS | 26 | Genera el instalador `.exe` para Windows. |
@@ -42,6 +46,7 @@ de esa librería. Antes de actualizarla, prueba el modo sudo.
 src/
   main.js              Proceso principal: sesiones, SSH, SFTP, túneles, edición remota y seguridad
   preload.js           Puente entre la interfaz y el proceso principal (lo único que la interfaz puede usar)
+  local.js             Consolas locales: detecta las instaladas y las abre con node-pty
   ppk.js               Lector de claves PuTTY v2/v3 → formato OpenSSH, solo en memoria
   stats.js             Estadísticas del servidor (lee /proc, df y who por un canal SSH aparte)
   renderer/
@@ -107,6 +112,9 @@ borran al cerrar la pestaña o la app.
 - **Ejecutable reforzado:** Electron Fuses desactivan `RunAsNode` y la depuración por línea
   de comandos, y se valida la integridad del paquete. La versión instalada no se abre con
   `--remote-debugging-port`.
+- **Consolas locales acotadas:** la interfaz solo puede elegir una consola de la lista que
+  arma el proceso principal (PowerShell, CMD, Git Bash, WSL); no puede pedir que se
+  ejecute un programa o comando cualquiera.
 - **Túneles solo locales:** escuchan en `127.0.0.1`, no en la red.
 
 Precauciones de uso:

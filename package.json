@@ -1,7 +1,7 @@
 {
   "name": "mi-terminal",
   "productName": "Mi Terminal",
-  "version": "0.3.3",
+  "version": "0.4.0",
   "private": true,
   "description": "Cliente SSH personal con pestañas, gestor de sesiones, SFTP y túneles",
   "author": "Pato Leigh",
@@ -15,6 +15,7 @@
     "@xterm/addon-webgl": "^0.19.0",
     "@xterm/xterm": "^6.0.0",
     "hash-wasm": "^4.12.0",
+    "node-pty": "^1.1.0",
     "ssh2": "1.17.0"
   },
   "devDependencies": {
@@ -28,6 +29,10 @@
       "output": "dist",
       "buildResources": "build"
     },
+    "npmRebuild": false,
+    "asarUnpack": [
+      "node_modules/node-pty/**"
+    ],
     "files": [
       "src/**/*",
       "build/icon.png",

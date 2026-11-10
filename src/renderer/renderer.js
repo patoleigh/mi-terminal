@@ -230,7 +230,23 @@ function askNow(title, label, { secret = true, value = '' } = {}) {
 
 // ---------- Pestañas de terminal ----------
 
-async function openSession(s) {
+const openSession = (s) => openTab(s.name, { session: s });
+
+// Consola de este equipo (CMD, PowerShell, WSL…) en una pestaña.
+const openLocal = (shell) => openTab(shell.name, { local: shell, noStats: true });
+
+$('#btn-local').onclick = async (e) => {
+  e.stopPropagation();
+  const r = e.currentTarget.getBoundingClientRect();
+  try {
+    const shells = await api.local.shells();
+    showMenu(r.left, r.bottom + 2, shells.map((sh) => [sh.name, () => openLocal(sh)]));
+  } catch (err) {
+    status(`No se pudieron listar las consolas: ${cleanErr(err)}`);
+  }
+};
+
+function openTab(name, extra) {
   const connId = `c${Date.now()}-${++counter}`;
   const el = document.createElement('div');
   el.className = 'term';
@@ -251,14 +267,15 @@ async function openSession(s) {
   const tabEl = document.createElement('div');
   tabEl.className = 'tab';
   const label = document.createElement('span');
-  label.textContent = s.name;
+  label.textContent = name;
+  if (extra.local) tabEl.classList.add('local');
   const close = document.createElement('button');
   close.textContent = '✕';
   close.title = 'Cerrar pestaña';
   tabEl.append(label, close);
   $('#tabs').append(tabEl);
 
-  const tab = { connId, session: s, term, fit, el, tabEl, alive: false, sftpPath: null };
+  const tab = { connId, term, fit, el, tabEl, alive: false, sftpPath: null, ...extra };
   tabs.set(connId, tab);
 
   tabEl.onclick = () => activate(connId);
@@ -314,7 +331,20 @@ function enableWebgl(term) {
   }
 }
 
+async function connectLocal(tab) {
+  fitTab(tab);
+  try {
+    await api.local.open({ connId: tab.connId, shellId: tab.local.id, cols: tab.term.cols, rows: tab.term.rows });
+    tab.alive = true;
+    tab.tabEl.classList.remove('dead');
+    if (activeId === tab.connId) tab.term.focus();
+  } catch (err) {
+    markClosed(tab, `Error: ${cleanErr(err)}`);
+  }
+}
+
 async function connectTab(tab, secret, retried = false) {
+  if (tab.local) return connectLocal(tab);
   // Usa los datos más recientes de la sesión por si se editó con la pestaña abierta.
   const s = (tab.session = sessions.find((x) => x.id === tab.session.id) || tab.session);
   fitTab(tab);
@@ -372,7 +402,7 @@ function markClosed(tab, msg) {
   tab.awaitReconnect = true;
   tab.tabEl.classList.add('dead');
   tab.term.writeln(`\r\n\x1b[31m${msg}\x1b[0m`);
-  tab.term.writeln('\x1b[90mPresiona Enter para reconectar.\x1b[0m');
+  tab.term.writeln(`\x1b[90mPresiona Enter para ${tab.local ? 'abrirla de nuevo' : 'reconectar'}.\x1b[0m`);
   if (activeId === tab.connId && sftpVisible) loadSftp();
 }
 
@@ -398,7 +428,7 @@ function activate(id) {
       fitTab(t);
       t.term.focus();
     });
-    status(`${t.session.username}@${t.session.host}:${t.session.port}`);
+    status(t.local ? `${t.local.name} (este equipo)` : `${t.session.username}@${t.session.host}:${t.session.port}`);
   } else {
     status('Listo');
   }
@@ -430,7 +460,7 @@ api.onStatus((id, msg) => {
 });
 api.onClosed((id) => {
   const t = tabs.get(id);
-  if (t?.alive) markClosed(t, 'Conexión cerrada.');
+  if (t?.alive) markClosed(t, t.local ? 'Consola cerrada.' : 'Conexión cerrada.');
 });
 
 // ---------- Estadísticas del servidor ----------
@@ -504,17 +534,54 @@ function drawSpark(canvas, data) {
   ctx.fill();
 }
 
+// La barra ocupa siempre una línea. Si no cabe todo, aparecen flechas para recorrerla.
+const statsItems = $('#stats-items');
+
+function updateStatArrows() {
+  const max = statsItems.scrollWidth - statsItems.clientWidth;
+  const x = statsItems.scrollLeft;
+  // Con las flechas ya visibles se exige un margen para ocultarlas, así no parpadean.
+  const overflow = max > 1 || x > 0;
+  $('#stats-prev').hidden = $('#stats-next').hidden = !overflow;
+  $('#stats-prev').disabled = x <= 0;
+  $('#stats-next').disabled = x >= max - 1;
+}
+
+function scrollStats(dir) {
+  statsItems.scrollLeft += dir * Math.max(120, statsItems.clientWidth * 0.6);
+  updateStatArrows();
+}
+$('#stats-prev').onclick = () => scrollStats(-1);
+$('#stats-next').onclick = () => scrollStats(1);
+statsItems.addEventListener('wheel', (e) => {
+  if (statsItems.scrollWidth <= statsItems.clientWidth) return;
+  e.preventDefault();
+  statsItems.scrollLeft += e.deltaY || e.deltaX;
+  updateStatArrows();
+}, { passive: false });
+new ResizeObserver(updateStatArrows).observe(statsItems);
+
 function renderStats() {
-  const bar = $('#statsbar');
+  // Los datos se redibujan cada 2 s: se conserva la posición en la que quedó el usuario.
+  const x = activeId === statsItems.dataset.tab ? statsItems.scrollLeft : 0;
+  statsItems.dataset.tab = activeId ?? '';
+  drawStats();
+  statsItems.scrollLeft = x;
+  updateStatArrows();
+}
+
+function drawStats() {
+  const wrap = $('#statsbar');
+  const bar = statsItems;
   const t = tabs.get(activeId);
   const st = t?.alive ? t.stats : null;
   bar.replaceChildren();
   if (!st) {
-    bar.hidden = !t?.alive || t.noStats;
+    wrap.hidden = !t?.alive || t.noStats;
     if (t?.alive) statItem(bar, '', 'Leyendo estadísticas del servidor…', { cls: 'wait' });
     return;
   }
-  bar.hidden = false;
+  wrap.hidden = false;
 
   statItem(bar, '', st.host || t.session.host, { cls: 'host', title: `${t.session.username}@${t.session.host}` });
 
@@ -563,7 +630,7 @@ function fmtSize(n) {
 
 function activeSftpTab() {
   const t = tabs.get(activeId);
-  return t?.alive ? t : null;
+  return t?.alive && t.session ? t : null;
 }
 
 async function loadSftp(dir) {
@@ -572,7 +639,7 @@ async function loadSftp(dir) {
   if (!t) {
     list.replaceChildren();
     $('#sftp-path').value = '';
-    sftpMsg('Conéctate a una sesión para ver sus archivos.');
+    sftpMsg(tabs.get(activeId)?.local ? 'Las consolas locales no usan SFTP.' : 'Conéctate a una sesión para ver sus archivos.');
     return;
   }
   syncSudo(t);

@@ -9,6 +9,7 @@ const crypto = require('crypto');
 const { Client } = require('ssh2');
 const { convertPpk, isPpk, PpkError } = require('./ppk');
 const { startStats } = require('./stats');
+const { listShells, openShell } = require('./local');
 
 let win;
 
@@ -401,13 +402,60 @@ function explainError(msg, s) {
   return msg;
 }
 
-on('ssh:write', (_e, connId, data) => conns.get(connId)?.stream?.write(data));
+on('ssh:write', (_e, connId, data) => {
+  const local = locals.get(connId);
+  if (local) return local.write(String(data));
+  conns.get(connId)?.stream?.write(data);
+});
 
 on('ssh:resize', (_e, connId, cols, rows) => {
+  const local = locals.get(connId);
+  if (local) {
+    try {
+      local.resize(cols, rows);
+    } catch {
+      /* la consola ya terminó */
+    }
+    return;
+  }
   conns.get(connId)?.stream?.setWindow(rows, cols, 0, 0);
 });
 
-on('ssh:disconnect', (_e, connId) => conns.get(connId)?.client.end());
+on('ssh:disconnect', (_e, connId) => {
+  if (locals.has(connId)) return closeLocal(connId);
+  conns.get(connId)?.client.end();
+});
+
+// ---------- Consolas locales (CMD, PowerShell, WSL…) ----------
+// Usan los mismos canales que una conexión SSH: para la interfaz son una pestaña más.
+
+const locals = new Map(); // connId -> pseudo-terminal
+
+function closeLocal(connId) {
+  const p = locals.get(connId);
+  if (!p) return;
+  locals.delete(connId);
+  try {
+    p.kill();
+  } catch {
+    /* ya había terminado */
+  }
+}
+
+handle('local:shells', async () => (await listShells()).map(({ id, name }) => ({ id, name })));
+
+handle('local:open', async (_e, { connId, shellId, cols, rows }) => {
+  if (typeof connId !== 'string' || conns.has(connId) || locals.has(connId)) throw new Error('Pestaña no válida');
+  const p = await openShell(String(shellId), cols, rows);
+  locals.set(connId, p);
+  p.onData((d) => send('ssh:data', connId, d));
+  p.onExit(() => {
+    if (locals.get(connId) !== p) return;
+    locals.delete(connId);
+    send('ssh:closed', connId);
+  });
+  return { ok: true };
+});
 
 // ---------- SFTP ----------
 
@@ -754,5 +802,6 @@ app.on('web-contents-created', (_e, contents) => {
 
 app.on('window-all-closed', () => {
   for (const c of conns.values()) c.client.end();
+  for (const id of [...locals.keys()]) closeLocal(id);
   app.quit();
 });

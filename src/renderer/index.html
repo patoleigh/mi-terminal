@@ -21,11 +21,12 @@
   <main>
     <div id="tabbar">
       <div id="tabs"></div>
+      <button id="btn-local" title="Abrir una consola de este equipo: PowerShell, CMD, WSL…">+ Consola</button>
       <button id="btn-sftp" title="Mostrar u ocultar el explorador de archivos">SFTP</button>
     </div>
     <div id="workspace">
       <div id="terminals">
-        <div id="empty">Doble clic en una sesión para conectar.<br><small>Clic derecho sobre una sesión para editarla.</small></div>
+        <div id="empty">Doble clic en una sesión para conectar.<br><small>Clic derecho sobre una sesión para editarla.<br>«+ Consola» abre PowerShell, CMD o WSL en este equipo.</small></div>
       </div>
       <div class="splitter" id="split-right" hidden title="Arrastra para cambiar el ancho. Doble clic: tamaño original."></div>
       <section id="sftp" hidden>
@@ -46,7 +47,11 @@
         <div id="sftp-status"></div>
       </section>
     </div>
-    <div id="statsbar" hidden></div>
+    <div id="statsbar" hidden>
+      <button id="stats-prev" hidden title="Ver lo anterior">‹</button>
+      <div id="stats-items"></div>
+      <button id="stats-next" hidden title="Ver lo que sigue">›</button>
+    </div>
     <div id="statusbar">Listo</div>
   </main>
 

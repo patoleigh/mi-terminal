@@ -96,6 +96,8 @@ main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
 .tab button { border: none; background: none; padding: 2px 4px; color: var(--muted); }
 .tab button:hover { color: var(--danger); }
 #btn-sftp { margin: 4px; }
+#btn-local { margin: 4px 0 4px 4px; white-space: nowrap; }
+.tab.local > span::before { content: '>_ '; opacity: 0.6; }
 #btn-sftp.on { background: var(--accent); border-color: var(--accent); color: #fff; }
 
 #workspace { flex: 1; display: flex; min-height: 0; }
@@ -130,14 +132,31 @@ main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
 /* Estadísticas del servidor */
 #statsbar {
   display: flex;
-  flex-wrap: wrap;
   background: var(--panel);
   border-top: 1px solid var(--border);
   font-size: 12px;
   user-select: none;
 }
 #statsbar[hidden] { display: none; }
+/* Siempre una sola línea: lo que no cabe se recorre con las flechas (o la rueda del mouse). */
+#stats-items { flex: 1; min-width: 0; display: flex; overflow: hidden; }
+#statsbar > button {
+  flex: none;
+  border: none;
+  border-radius: 0;
+  background: var(--panel);
+  color: var(--text);
+  padding: 0 8px;
+  font-size: 15px;
+  line-height: 1;
+}
+#statsbar > button[hidden] { display: none; }
+#statsbar > button:hover:not(:disabled) { background: var(--accent); color: #fff; }
+#statsbar > button:disabled { opacity: 0.3; cursor: default; }
+#stats-prev { border-right: 1px solid var(--border); }
+#stats-next { border-left: 1px solid var(--border); }
 #statsbar .stat {
+  flex: none;
   display: flex;
   align-items: center;
   gap: 6px;
