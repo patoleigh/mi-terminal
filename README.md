@@ -184,7 +184,9 @@ borran al cerrar la pestaña o la app.
 - **Los secretos nunca llegan a la interfaz:** contraseñas y frases de paso se descifran
   solo en el proceso principal, al conectar.
 - **Verificación de servidores:** la primera conexión muestra la huella SHA-256. Las
-  siguientes se comparan y, si cambia, la conexión se bloquea.
+  siguientes se comparan y, si cambia, la conexión se detiene. Si sabes que el servidor se
+  reinstaló, el mismo aviso permite aceptar la huella nueva (con doble confirmación), o
+  puedes usar **Olvidar huella del servidor** en el menú de la sesión.
 - **Algoritmos modernos:** se excluyen los basados en SHA-1.
 - **Archivos del servidor:** los nombres y datos que llegan del servidor se muestran como
   texto, nunca como HTML. Con el programa predeterminado de Windows no se abren tipos

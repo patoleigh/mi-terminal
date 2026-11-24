@@ -8,6 +8,7 @@ contextBridge.exposeInMainWorld('api', {
   saveSession: (s) => ipcRenderer.invoke('sessions:save', s),
   deleteSession: (id) => ipcRenderer.invoke('sessions:delete', id),
   pickKey: () => ipcRenderer.invoke('dialog:pickKey'),
+  forgetHostKey: (sessionId) => ipcRenderer.invoke('hosts:forget', sessionId),
 
   connect: (opts) => ipcRenderer.invoke('ssh:connect', opts),
   write: (id, data) => ipcRenderer.send('ssh:write', id, data),

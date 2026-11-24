@@ -61,6 +61,7 @@ function renderTree() {
           ['Conectar', () => openSession(s)],
           ['Editar', () => editSession(s)],
           ['Duplicar', () => editSession({ ...s, id: undefined, name: `${s.name} (copia)`, hasPassword: false, hasPassphrase: false })],
+          ['Olvidar huella del servidor', () => forgetHostKey(s)],
           ['Eliminar', () => removeSession(s)],
         ]);
       };
@@ -73,6 +74,19 @@ function renderTree() {
     p.className = 'hint';
     p.textContent = sessions.length ? 'Sin resultados.' : 'No hay sesiones. Pulsa + para crear una.';
     tree.append(p);
+  }
+}
+
+async function forgetHostKey(s) {
+  const msg =
+    `¿Olvidar la huella guardada de "${s.name}" (${s.host}:${s.port})?\n\n` +
+    'Úsalo solo si sabes que el servidor se reinstaló. En la próxima conexión se te mostrará la huella nueva para confirmarla.';
+  if (!confirm(msg)) return;
+  try {
+    const removed = await api.forgetHostKey(s.id);
+    status(removed ? `Huella de ${s.host} olvidada.` : `No había huella guardada para ${s.host}.`);
+  } catch (err) {
+    status(cleanErr(err));
   }
 }
 

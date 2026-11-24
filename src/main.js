@@ -171,17 +171,7 @@ function verifyHost(host, port, key, verify) {
   if (known[id] === fp) return verify(true);
 
   if (known[id]) {
-    dialog
-      .showMessageBox(win, {
-        type: 'error',
-        title: 'La clave del servidor cambió',
-        message: `La huella de ${id} no coincide con la guardada.`,
-        detail:
-          `Guardada: ${known[id]}\nRecibida: ${fp}\n\n` +
-          'Puede ser una reinstalación del servidor o un intento de suplantación. Conexión cancelada.\n' +
-          `Si el cambio es legítimo, borra esa entrada de:\n${knownHostsFile()}`,
-      })
-      .then(() => verify(false));
+    replaceHostKey(id, known[id], fp).then(verify, () => verify(false));
     return;
   }
 
@@ -205,6 +195,58 @@ function verifyHost(host, port, key, verify) {
       }
     });
 }
+
+// La huella cambió: se puede aceptar la nueva desde el mismo aviso, con doble confirmación.
+// "Cancelar" es siempre la opción por defecto (Enter o Esc por accidente no cambian nada).
+async function replaceHostKey(id, saved, fp) {
+  const first = await dialog.showMessageBox(win, {
+    type: 'error',
+    title: 'La clave del servidor cambió',
+    message: `La huella de ${id} no coincide con la guardada.`,
+    detail:
+      `Guardada: ${saved}\nRecibida: ${fp}\n\n` +
+      'Puede ser una reinstalación del servidor (por ejemplo, una instancia EC2 recreada o ' +
+      'restaurada desde una imagen) o un intento de suplantación.\n\n' +
+      'Acepta la huella nueva solo si sabes por qué cambió.',
+    buttons: ['Cancelar', 'Aceptar la huella nueva…'],
+    defaultId: 0,
+    cancelId: 0,
+    noLink: true,
+  });
+  if (first.response !== 1) return false;
+
+  const second = await dialog.showMessageBox(win, {
+    type: 'warning',
+    title: 'Confirmar huella nueva',
+    message: `¿Reemplazar la huella guardada de ${id}?`,
+    detail:
+      `Nueva huella: ${fp}\n\n` +
+      'Si no fue una reinstalación, alguien podría estar interceptando la conexión y ' +
+      'leer lo que escribas, incluidas contraseñas.',
+    buttons: ['Cancelar', 'Reemplazar y conectar'],
+    defaultId: 0,
+    cancelId: 0,
+    noLink: true,
+  });
+  if (second.response !== 1) return false;
+
+  const known = readJson(knownHostsFile(), {});
+  known[id] = fp;
+  writeJson(knownHostsFile(), known);
+  return true;
+}
+
+// Olvida la huella guardada de una sesión: la próxima conexión la pregunta como servidor nuevo.
+handle('hosts:forget', (_e, sessionId) => {
+  const s = loadSessions().find((x) => x.id === sessionId);
+  if (!s) throw new Error('Sesión no encontrada');
+  const id = `[${s.host}]:${s.port}`;
+  const known = readJson(knownHostsFile(), {});
+  if (!known[id]) return false;
+  delete known[id];
+  writeJson(knownHostsFile(), known);
+  return true;
+});
 
 // ---------- SSH ----------
 
